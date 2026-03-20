@@ -1,0 +1,73 @@
+# 🔮 CodeOracle — Explainability-Driven Multi-Agent RAG System
+
+> *"Don't just read code. Understand it."*
+
+CodeOracle is a production-grade AI system that ingests any GitHub repository and enables deep, explainable understanding using Multi-Agent RAG, static analysis, and architecture visualization.
+
+---
+
+## Architecture Overview
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                        CodeOracle System                         │
+├─────────────────────────────────────────────────────────────────┤
+│  Frontend (React)                                                │
+│  ┌──────────────┐ ┌──────────────┐ ┌──────────────┐           │
+│  │ Chat Interface│ │Code Explorer │ │ Diagram View │           │
+│  └──────────────┘ └──────────────┘ └──────────────┘           │
+├─────────────────────────────────────────────────────────────────┤
+│  FastAPI Backend                                                 │
+│  ┌──────────────────────────────────────────────────────────┐  │
+│  │                    Orchestrator                           │  │
+│  │  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐  │  │
+│  │  │Retrieval │ │Understand│ │Architect │ │ Analyzer │  │  │
+│  │  │  Agent   │ │  Agent   │ │  Agent   │ │  Agent   │  │  │
+│  │  └──────────┘ └──────────┘ └──────────┘ └──────────┘  │  │
+│  │  ┌──────────┐ ┌──────────┐ ┌──────────┐               │  │
+│  │  │Assistant │ │Verifier  │ │Reflection│               │  │
+│  │  │  Agent   │ │  Agent   │ │  Agent   │               │  │
+│  │  └──────────┘ └──────────┘ └──────────┘               │  │
+│  └──────────────────────────────────────────────────────────┘  │
+├─────────────────────────────────────────────────────────────────┤
+│  Core Infrastructure                                             │
+│  ┌──────────────┐ ┌──────────────┐ ┌──────────────┐           │
+│  │  RAG Pipeline│ │Static Analysis│ │Global Context│           │
+│  │  FAISS/Chroma│ │  tree-sitter │ │    Memory    │           │
+│  └──────────────┘ └──────────────┘ └──────────────┘           │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+## Quick Start
+
+```bash
+# 1. Clone this repo
+git clone <this-repo>
+cd codeoracle
+
+# 2. Backend setup
+cd backend
+pip install -r requirements.txt
+cp .env.example .env  # Add your ANTHROPIC_API_KEY
+
+# 3. Start backend
+uvicorn api.main:app --reload --port 8000
+
+# 4. Frontend setup (new terminal)
+cd frontend
+npm install
+npm run dev
+```
+
+## Features
+
+| Feature | Description |
+|---------|-------------|
+| 🤖 Multi-Agent RAG | 7 specialized agents for deep understanding |
+| 📊 Architecture Diagrams | Auto-generated PlantUML + Mermaid diagrams |
+| 🔍 Execution Flow | Trace function calls across the entire codebase |
+| 💡 "Why" Mode | Explains design decisions, not just behavior |
+| 🔬 Impact Analysis | "What breaks if I change X?" |
+| 🛡️ Hallucination Guard | Verifier agent with confidence scores |
+| 🏥 Repo Health | Complexity, coupling, maintainability metrics |
+| 💬 Chat Interface | Conversational access to all capabilities |
