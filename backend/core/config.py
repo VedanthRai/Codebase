@@ -14,10 +14,21 @@ except ImportError:
 
 
 class Settings(BaseSettings):
-    # API Keys
-    anthropic_api_key: str = ""
+    # Gemini API Keys (primary + backups)
     gemini_api_key: str = ""
-    model_name: str = "gemini-2.5-flash"
+    gemini_api_key_2: str = ""
+    gemini_api_key_3: str = ""
+    model_name: str = "gemini-2.0-flash"
+
+    # Groq API Key
+    groq_api_key: str = ""
+
+    # OpenRouter API Key
+    openrouter_api_key: str = ""
+
+    def get_api_keys(self) -> list:
+        """Returns all configured Gemini keys, filtering out empty ones."""
+        return [k for k in [self.gemini_api_key, self.gemini_api_key_2, self.gemini_api_key_3] if k]
 
     # Embeddings & Vector DB
     embedding_model: str = "all-MiniLM-L6-v2"

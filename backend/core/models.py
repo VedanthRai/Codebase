@@ -207,3 +207,6 @@ class QueryResponse(BaseModel):
     retrieved_chunks: List[CodeChunk] = Field(default_factory=list)
     agent_trace: List[AgentMessage] = Field(default_factory=list)
     processing_time_ms: float
+    tldr: str = ""
+    takeaways: List[str] = Field(default_factory=list)
+    suggested_questions: List[str] = Field(default_factory=list)

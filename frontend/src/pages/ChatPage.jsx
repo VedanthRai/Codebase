@@ -68,6 +68,11 @@ export default function ChatPage() {
     inputRef.current?.focus()
   }
 
+  const handleSuggestedQuestion = (q) => {
+    setInput(q)
+    inputRef.current?.focus()
+  }
+
   const isEmptyChat = messages.length === 0
 
   return (
@@ -125,7 +130,7 @@ export default function ChatPage() {
                 msg.role === 'user'
                   ? <UserMessage key={msg.id} message={msg} />
                   : msg.role === 'assistant'
-                    ? <AssistantMessage key={msg.id} message={msg} />
+                    ? <AssistantMessage key={msg.id} message={msg} onSuggestedQuestion={handleSuggestedQuestion} />
                     : (
                       <div key={msg.id} className="error-message">
                         {msg.content}

@@ -217,8 +217,8 @@ async def query_repository(request: QueryRequest):
         response = await orchestrator.process(request)
         return response
     except Exception as e:
-        logger.error(f"Query processing failed: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Query processing failed: {str(e)}")
+        logger.error("Query processing failed: {}", str(e))
+        raise HTTPException(status_code=500, detail="Query processing failed: " + str(e))
 
 
 # ── WebSocket for streaming ────────────────────────────────────────────────────
@@ -267,6 +267,19 @@ async def websocket_query(websocket: WebSocket, repo_id: str):
 
     except WebSocketDisconnect:
         logger.info(f"WebSocket disconnected for repo {repo_id}")
+
+
+@app.get("/api/repos/{repo_id}/suggest")
+async def suggest_questions(repo_id: str):
+    """Return AI-suggested questions for a repository."""
+    ctx = get_context(repo_id)
+    if not ctx:
+        raise HTTPException(status_code=404, detail="Repository not found.")
+    orchestrator = get_orchestrator(repo_id)
+    if not orchestrator:
+        raise HTTPException(status_code=503, detail="Agent system not ready.")
+    questions = orchestrator.suggester.suggest(ctx)
+    return {"questions": questions}
 
 
 # ── Utility Endpoints ─────────────────────────────────────────────────────────

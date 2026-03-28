@@ -1,0 +1,26 @@
+# Environment variables - never commit these
+.env
+*.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+*.egg-info/
+
+# Data - large files, not needed in repo
+backend/data/chroma/
+backend/data/repos/
+
+# Node
+node_modules/
+dist/
+build/
+
+# Misc
+.DS_Store
+*.log

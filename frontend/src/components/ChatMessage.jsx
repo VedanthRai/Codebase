@@ -5,7 +5,7 @@ import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism'
 import { motion } from 'framer-motion'
 import {
   Shield, ShieldAlert, ChevronDown, ChevronUp,
-  Clock, Zap, FileCode, Copy, Check
+  Clock, FileCode, Copy, Check, Sparkles, MessageSquare
 } from 'lucide-react'
 import MermaidDiagram from './MermaidDiagram'
 
@@ -110,6 +110,43 @@ function SourcesPanel({ chunks }) {
   )
 }
 
+function TldrPanel({ tldr, takeaways }) {
+  if (!tldr && (!takeaways || takeaways.length === 0)) return null
+  return (
+    <div className="tldr-panel">
+      <div className="tldr-header">
+        <Sparkles size={12} />
+        <span>TL;DR</span>
+      </div>
+      {tldr && <p className="tldr-text">{tldr}</p>}
+      {takeaways?.length > 0 && (
+        <ul className="takeaways-list">
+          {takeaways.map((t, i) => <li key={i}>{t}</li>)}
+        </ul>
+      )}
+    </div>
+  )
+}
+
+function SuggestedQuestions({ questions, onSelect }) {
+  if (!questions?.length) return null
+  return (
+    <div className="suggested-questions">
+      <div className="suggested-header">
+        <MessageSquare size={12} />
+        <span>Follow-up questions</span>
+      </div>
+      <div className="suggested-list">
+        {questions.slice(0, 4).map((q, i) => (
+          <button key={i} className="suggested-btn" onClick={() => onSelect(q)}>
+            {q}
+          </button>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 export function UserMessage({ message }) {
   return (
     <motion.div
@@ -128,7 +165,7 @@ export function UserMessage({ message }) {
   )
 }
 
-export function AssistantMessage({ message }) {
+export function AssistantMessage({ message, onSuggestedQuestion }) {
   return (
     <motion.div
       className="message assistant-message"
@@ -154,6 +191,9 @@ export function AssistantMessage({ message }) {
         )}
         <VerificationBadge verification={message.verification} />
       </div>
+
+      {/* TL;DR */}
+      <TldrPanel tldr={message.tldr} takeaways={message.takeaways} />
 
       {/* Main content */}
       <div className="message-bubble assistant-bubble">
@@ -191,6 +231,12 @@ export function AssistantMessage({ message }) {
 
       {/* Sources */}
       <SourcesPanel chunks={message.chunks} />
+
+      {/* Suggested follow-up questions */}
+      <SuggestedQuestions
+        questions={message.suggested_questions}
+        onSelect={onSuggestedQuestion}
+      />
     </motion.div>
   )
 }

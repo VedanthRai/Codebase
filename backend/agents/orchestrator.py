@@ -28,28 +28,66 @@ class BaseAgent:
         self.trace: List[AgentMessage] = []
 
     def _call(self, system: str, messages: List[Dict], max_tokens: int = 2000) -> str:
-        # Ensure API key is bound to the current execution thread
-        api_key = settings.gemini_api_key or os.environ.get("GEMINI_API_KEY")
-        if not api_key:
-            raise ValueError("GEMINI_API_KEY is not set. Please check your backend/.env file.")
-        genai.configure(api_key=api_key)
+        # Try Gemini keys first
+        gemini_keys = settings.get_api_keys()
+        for key in gemini_keys:
+            try:
+                genai.configure(api_key=key)
+                model = genai.GenerativeModel(
+                    model_name=settings.model_name,
+                    system_instruction=system
+                )
+                gemini_messages = []
+                for m in messages:
+                    role = "user" if m.get("role") == "user" else "model"
+                    gemini_messages.append({"role": role, "parts": [m["content"]]})
+                response = model.generate_content(
+                    gemini_messages,
+                    generation_config=genai.types.GenerationConfig(max_output_tokens=max_tokens)
+                )
+                return response.text
+            except Exception as e:
+                logger.warning("Gemini key failed, trying next: {}", str(e))
 
-        model_name = settings.model_name
-        model = genai.GenerativeModel(
-            model_name=model_name,
-            system_instruction=system
-        )
-        
-        gemini_messages = []
-        for m in messages:
-            role = "user" if m.get("role") == "user" else "model"
-            gemini_messages.append({"role": role, "parts": [m["content"]]})
-            
-        response = model.generate_content(
-            gemini_messages,
-            generation_config=genai.types.GenerationConfig(max_output_tokens=max_tokens)
-        )
-        return response.text
+        # Try Groq as fallback
+        if settings.groq_api_key:
+            try:
+                import httpx
+                headers = {
+                    "Authorization": f"Bearer {settings.groq_api_key}",
+                    "Content-Type": "application/json",
+                }
+                payload = {
+                    "model": "llama-3.3-70b-versatile",
+                    "messages": [{"role": "system", "content": system}] + messages,
+                    "max_tokens": max_tokens,
+                }
+                r = httpx.post("https://api.groq.com/openai/v1/chat/completions", json=payload, headers=headers, timeout=60)
+                r.raise_for_status()
+                return r.json()["choices"][0]["message"]["content"]
+            except Exception as e:
+                logger.warning("Groq fallback failed: {}", str(e))
+
+        # Try OpenRouter as final fallback
+        if settings.openrouter_api_key:
+            try:
+                import httpx
+                headers = {
+                    "Authorization": f"Bearer {settings.openrouter_api_key}",
+                    "Content-Type": "application/json",
+                }
+                payload = {
+                    "model": "meta-llama/llama-3.3-70b-instruct:free",
+                    "messages": [{"role": "system", "content": system}] + messages,
+                    "max_tokens": max_tokens,
+                }
+                r = httpx.post("https://openrouter.ai/api/v1/chat/completions", json=payload, headers=headers, timeout=60)
+                r.raise_for_status()
+                return r.json()["choices"][0]["message"]["content"]
+            except Exception as e:
+                logger.warning("OpenRouter fallback failed: {}", str(e))
+
+        raise RuntimeError("All API providers exhausted. Please check your API keys in .env")
 
     def _log(self, content: str, metadata: Dict = None):
         self.trace.append(AgentMessage(
@@ -263,43 +301,52 @@ Rules:
         return None
 
     def _generate_module_diagram(self, ctx: RepositoryContext) -> Optional[DiagramOutput]:
-        # Build from real file structure
+        # Build directly from real file structure — no LLM, no syntax errors
         files_by_dir: Dict[str, List[str]] = {}
-        for path in list(ctx.files.keys())[:30]:
-            parts = path.split('/')
+        for path in list(ctx.files.keys())[:40]:
+            parts = path.replace('\\', '/').split('/')
             dir_name = parts[0] if len(parts) > 1 else "root"
             files_by_dir.setdefault(dir_name, []).append(path)
 
-        prompt = f"""Generate a Mermaid graph diagram showing the architecture of '{ctx.repo_name}'.
+        if not files_by_dir:
+            return None
 
-Directories/modules: {list(files_by_dir.keys())}
-Critical modules: {ctx.critical_modules[:8]}
-Entry points: {ctx.entry_points[:5]}
-README excerpt: {ctx.readme_content[:500]}
+        lines = ["graph TD"]
+        seen = set()
 
-Generate ONLY Mermaid graph TD code showing module relationships.
-Rules:
-1. Use quotes around node labels (e.g. A["Module Name"])
-2. Replace special characters like < and > with [ and ].
-3. Do not use backslashes (\\) in labels."""
+        for dir_name, files in list(files_by_dir.items())[:12]:
+            dir_id = re.sub(r'[^a-zA-Z0-9]', '_', dir_name)
+            dir_label = dir_name.replace('"', "'")
+            if dir_id not in seen:
+                lines.append(f'    {dir_id}["{dir_label}"]')
+                seen.add(dir_id)
 
-        try:
-            raw = self._call(
-                system=self.SYSTEM,
-                messages=[{"role": "user", "content": prompt}],
-                max_tokens=800,
-            )
-            mermaid = self._clean_mermaid(raw)
-            if mermaid:
-                return DiagramOutput(
-                    diagram_type="architecture",
-                    mermaid_code=mermaid,
-                    description=f"Architecture overview of {ctx.repo_name}",
-                    involved_components=list(files_by_dir.keys()),
-                )
-        except Exception as e:
-            logger.warning(f"Architecture diagram failed: {e}")
-        return None
+        # Connect entry points to their modules
+        for ep in ctx.entry_points[:5]:
+            ep_clean = ep.replace('\\', '/')
+            parts = ep_clean.split('/')
+            dir_name = parts[0] if len(parts) > 1 else "root"
+            dir_id = re.sub(r'[^a-zA-Z0-9]', '_', dir_name)
+            ep_id = re.sub(r'[^a-zA-Z0-9]', '_', ep_clean)
+            ep_label = parts[-1].replace('"', "'")
+            if ep_id not in seen:
+                lines.append(f'    {ep_id}(("{ep_label}"))')
+                seen.add(ep_id)
+            lines.append(f'    {ep_id} --> {dir_id}')
+
+        # Connect critical modules
+        dirs = list(files_by_dir.keys())
+        for i in range(min(len(dirs) - 1, 8)):
+            src = re.sub(r'[^a-zA-Z0-9]', '_', dirs[i])
+            tgt = re.sub(r'[^a-zA-Z0-9]', '_', dirs[i + 1])
+            lines.append(f'    {src} --> {tgt}')
+
+        return DiagramOutput(
+            diagram_type="architecture",
+            mermaid_code="\n".join(lines),
+            description=f"Architecture overview of {ctx.repo_name}",
+            involved_components=list(files_by_dir.keys()),
+        )
 
     def _generate_dependency_diagram(self, ctx: RepositoryContext) -> Optional[DiagramOutput]:
         # Top 15 most connected files only
@@ -379,12 +426,8 @@ Rules:
         return f"node_{clean_name}_{short_hash}"
 
     def _sanitize_label(self, label: str) -> str:
-        # Mermaid labels should avoid unescaped quotes and angle brackets.
-        s = label.replace('"', "'").replace('<', '[').replace('>', ']').replace('\\', '/')
-        # Remove extraneous control characters that can break mermaid parsing.
+        s = label.replace('"', "'").replace('<', '(').replace('>', ')').replace('\\', '/')
         s = re.sub(r'[\x00-\x1f\x7f]', '', s)
-        # Escape brackets that could be interpreted as Mermaid syntax in labels.
-        s = s.replace('[', '\[').replace(']', '\]')
         return s.strip()
 
     def _clean_mermaid(self, raw: str) -> str:
@@ -643,7 +686,85 @@ Improve this answer."""
         return draft_answer
 
 
-# ─── 7. Assistant Agent (Orchestrator) ────────────────────────────────────────
+# ─── 7. Summary Agent ─────────────────────────────────────────────────────────
+
+class SummaryAgent(BaseAgent):
+    """
+    Generates a concise TL;DR and bullet-point key takeaways for any response.
+    Helps users quickly grasp the most important points.
+    """
+
+    SYSTEM = """You are a technical summarizer. Given a detailed code explanation, produce:
+1. A one-sentence TL;DR
+2. 3-5 bullet-point key takeaways
+
+Respond ONLY with valid JSON:
+{
+  "tldr": "one sentence summary",
+  "takeaways": ["point 1", "point 2", "point 3"]
+}"""
+
+    def __init__(self):
+        super().__init__(AgentRole.ASSISTANT)
+
+    def summarize(self, response_text: str) -> Dict:
+        if len(response_text) < 200:
+            return {"tldr": "", "takeaways": []}
+        try:
+            raw = self._call(
+                system=self.SYSTEM,
+                messages=[{"role": "user", "content": response_text[:3000]}],
+                max_tokens=400,
+            )
+            match = re.search(r'\{.*\}', raw, re.DOTALL)
+            if match:
+                return json.loads(match.group())
+        except Exception as e:
+            logger.warning(f"Summary generation failed: {e}")
+        return {"tldr": "", "takeaways": []}
+
+
+# ─── 8. Question Suggester ─────────────────────────────────────────────────────
+
+class QuestionSuggesterAgent(BaseAgent):
+    """
+    Proactively suggests relevant follow-up questions based on the repository context.
+    """
+
+    SYSTEM = """You are a developer assistant. Given a repository's structure and summary,
+suggest 6 insightful questions a developer would want to ask about this codebase.
+Focus on architecture, design decisions, potential issues, and key flows.
+
+Respond ONLY with valid JSON:
+{"questions": ["question 1", "question 2", "question 3", "question 4", "question 5", "question 6"]}"""
+
+    def __init__(self):
+        super().__init__(AgentRole.ASSISTANT)
+
+    def suggest(self, context: RepositoryContext) -> List[str]:
+        prompt = f"""Repository: {context.repo_name}
+Languages: {list(context.languages.keys())}
+Files: {context.total_files}, Functions: {context.total_functions}, Classes: {context.total_classes}
+Critical modules: {context.critical_modules[:6]}
+Entry points: {context.entry_points[:4]}
+Summary: {context.repo_summary[:500]}"""
+
+        try:
+            raw = self._call(
+                system=self.SYSTEM,
+                messages=[{"role": "user", "content": prompt}],
+                max_tokens=500,
+            )
+            match = re.search(r'\{.*\}', raw, re.DOTALL)
+            if match:
+                data = json.loads(match.group())
+                return data.get("questions", [])
+        except Exception as e:
+            logger.warning(f"Question suggestion failed: {e}")
+        return []
+
+
+# ─── 9. Assistant Agent (Orchestrator) ────────────────────────────────────────
 
 class AssistantAgent(BaseAgent):
     """
@@ -708,6 +829,8 @@ class AgentOrchestrator:
         self.analyzer = CodeAnalysisAgent()
         self.verifier = VerifierAgent()
         self.reflection = ReflectionAgent()
+        self.summarizer = SummaryAgent()
+        self.suggester = QuestionSuggesterAgent()
 
     async def process(self, request: QueryRequest) -> QueryResponse:
         start_time = time.time()
@@ -785,6 +908,12 @@ class AgentOrchestrator:
 
         elapsed_ms = (time.time() - start_time) * 1000
 
+        # 6. Generate TL;DR summary
+        summary_data = self.summarizer.summarize(response_text)
+
+        # 7. Suggest follow-up questions
+        suggested = self.suggester.suggest(self.context)
+
         return QueryResponse(
             query_id=query_id,
             original_query=request.query,
@@ -796,6 +925,9 @@ class AgentOrchestrator:
             retrieved_chunks=retrieval_result.chunks[:5],
             agent_trace=all_trace,
             processing_time_ms=round(elapsed_ms, 1),
+            tldr=summary_data.get("tldr", ""),
+            takeaways=summary_data.get("takeaways", []),
+            suggested_questions=suggested,
         )
 
     def _architecture_summary(self, ctx: RepositoryContext) -> str:
